@@ -1,6 +1,6 @@
 # Shook
 
-Trivial server to listen to webhooks and execute a set of commands.
+Trivial server to listen to Gitlab webhooks and execute a set of commands.
 
 ## Build
 
