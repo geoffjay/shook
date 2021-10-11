@@ -1,9 +1,16 @@
 [package]
 name = "shook"
 version = "0.1.0"
+authors = ["Geoff Johnson <geoff.jay@gmail.com>"]
+description = "Service to listen to Webhook events and execute a set of commands"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+documentation = "https://github.com/geoffjay/shook"
+homepage = "https://github.com/geoffjay/shook"
+repository = "https://github.com/geoffjay/shook"
+readme = "README.md"
+keywords = ["gitlab", "webhook"]
+categories = ["command-line-utilities", "web-programming::http-client"]
 
 [dependencies]
 actix-web = "3.3.2"
@@ -12,6 +19,7 @@ clap = "2.33.3"
 futures = "0.3.17"
 serde = "1.0.130"
 serde_json = "1.0.68"
+serde_yaml = "0.8.21"
 slog = "2.7.0"
 slog-async = "2.7.0"
 slog-json = "2.4.0"

@@ -8,6 +8,7 @@ pub struct ShookArgs {
     pub token: String,
     pub port: String,
     pub host: String,
+    pub config: String,
     pub level: slog::Level,
 }
 
@@ -48,6 +49,13 @@ impl ShookArgs {
                     .help("host to bind to"),
             )
             .arg(
+                Arg::with_name("config")
+                    .long("config")
+                    .short("c")
+                    .takes_value(true)
+                    .help("configuration file to load"),
+            )
+            .arg(
                 Arg::with_name("verbose")
                     .long("verbose")
                     .short("v")
@@ -61,6 +69,7 @@ impl ShookArgs {
             .expect("A Webhook token is required");
         let port = matches.value_of("port").unwrap_or("5000");
         let host = matches.value_of("host").unwrap_or("0.0.0.0");
+        let config = matches.value_of("config").unwrap_or("config.yml");
         let level = match matches.occurrences_of("verbose") {
             0 => slog::Level::Info,
             1 => slog::Level::Debug,
@@ -71,6 +80,7 @@ impl ShookArgs {
             token: token.to_string(),
             port: port.to_string(),
             host: host.to_string(),
+            config: config.to_string(),
             level,
         })
     }

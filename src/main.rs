@@ -8,19 +8,49 @@ mod cmd;
 mod webhook;
 
 use actix_web::{
-    error, http::header::HeaderMap, web, App, Error, HttpRequest, HttpResponse, HttpServer, post,
+    error, http::header::HeaderMap, post, web, App, Error, HttpRequest, HttpResponse, HttpServer,
 };
 use chrono::prelude::*;
 use futures::StreamExt;
+use serde::Deserialize;
 use slog::Drain;
+use std::process::Command;
 
 use cmd::ShookArgs;
 use webhook::Webhook;
 
 const MAX_SIZE: usize = 262_144; // max payload size is 256k
 
+#[derive(Deserialize)]
+struct Project {
+    name: String,
+    commands: Vec<String>,
+}
+
+#[derive(Deserialize)]
 struct Config {
+    #[serde(skip)]
     token: String,
+    projects: Vec<Project>,
+}
+
+impl Config {
+    fn execute_commands(&self, project: String) {
+        let log = slog_scope::logger();
+        debug!(log, "run commands for project"; "project" => project.clone());
+        let iter = self.projects.iter();
+
+        for p in iter {
+            if p.name.clone() == project.clone() {
+                debug!(log, "processor"; "project_name" => p.name.clone());
+            }
+        }
+
+        Command::new("bash")
+            // .arg(self.bash_file_path.clone())
+            .spawn()
+            .expect("failed to execute process");
+    }
 }
 
 fn verify(headers: &HeaderMap, state: &str) -> bool {
@@ -31,7 +61,12 @@ fn verify(headers: &HeaderMap, state: &str) -> bool {
 }
 
 #[post("/{project}")]
-async fn resp(data: web::Data<Config>, req: HttpRequest, mut payload: web::Payload) -> Result<HttpResponse, Error> {
+async fn webhook_handler(
+    data: web::Data<Config>,
+    req: HttpRequest,
+    web::Path(project): web::Path<String>,
+    mut payload: web::Payload,
+) -> Result<HttpResponse, Error> {
     let log = slog_scope::logger();
     if verify(req.headers(), &data.token) {
         debug!(log, "X-Gitlab-Token header verified");
@@ -46,8 +81,8 @@ async fn resp(data: web::Data<Config>, req: HttpRequest, mut payload: web::Paylo
             body.extend_from_slice(&chunk);
         }
 
-        debug!(log, "request body"; "data" => format!("{:?}", body));
         let webhook = serde_json::from_slice::<Webhook>(&body)?;
+
         debug!(log, "webhook data"; "event_type" => webhook.event_type());
         debug!(log, "webhook data"; "repository_url" => webhook.repository_url());
         debug!(log, "webhook data"; "action" => webhook.action());
@@ -56,10 +91,12 @@ async fn resp(data: web::Data<Config>, req: HttpRequest, mut payload: web::Paylo
         debug!(log, "webhook data"; "state" => webhook.state());
         debug!(log, "webhook data"; "merge_status" => webhook.merge_status());
 
-        Ok(HttpResponse::Ok().finish())
+        data.execute_commands(project);
+
+        Ok(HttpResponse::Ok().into())
     } else {
         warn!(log, "X-Gitlab-Token header verification failed");
-        Ok(HttpResponse::Unauthorized().finish())
+        Ok(HttpResponse::Unauthorized().into())
     }
 }
 
@@ -76,7 +113,9 @@ async fn main() -> std::io::Result<()> {
     let log = slog::Logger::root(drain, o!("format" => "pretty"));
     let _guard = slog_scope::set_global_logger(log);
 
-    let config = Config { token: shook.token };
+    let config_file = std::fs::File::open(shook.config)?;
+    let config: Config = serde_yaml::from_reader(config_file).unwrap();
+    // let config = Config { token: shook.token, services };
 
     let logger = slog_scope::logger();
     let app_log = logger.new(o!("host" => shook.host.clone(), "port" => shook.port.clone()));
@@ -84,12 +123,8 @@ async fn main() -> std::io::Result<()> {
 
     let config_data = web::Data::new(config);
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(config_data.clone())
-            .service(resp)
-    })
-    .bind(format!("{}:{}", shook.host, shook.port))?
-    .run()
-    .await
+    HttpServer::new(move || App::new().app_data(config_data.clone()).service(webhook_handler))
+        .bind(format!("{}:{}", shook.host, shook.port))?
+        .run()
+        .await
 }

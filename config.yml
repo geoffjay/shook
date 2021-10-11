@@ -1,0 +1,6 @@
+projects:
+  - name: sample
+    commands: >
+      export LOG=/tmp/sample.log
+      touch $LOG
+      echo test >> $LOG
