@@ -7,7 +7,7 @@ struct Repository {
 
 #[derive(Deserialize)]
 struct Attributes {
-    action: String,
+    // action: String,
     target_branch: String,
     source_branch: String,
     state: String,
@@ -30,9 +30,9 @@ impl Webhook {
         self.repository.url.clone()
     }
 
-    pub fn action(&self) -> String {
-        self.object_attributes.action.clone()
-    }
+    // pub fn action(&self) -> String {
+    //     self.object_attributes.action.clone()
+    // }
 
     pub fn target_branch(&self) -> String {
         self.object_attributes.target_branch.clone()

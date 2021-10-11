@@ -35,21 +35,22 @@ struct Config {
 }
 
 impl Config {
-    fn execute_commands(&self, project: String) {
+    fn execute_commands(&self, project_name: String) {
         let log = slog_scope::logger();
-        debug!(log, "run commands for project"; "project" => project.clone());
-        let iter = self.projects.iter();
-
-        for p in iter {
-            if p.name.clone() == project.clone() {
-                debug!(log, "processor"; "project_name" => p.name.clone());
+        debug!(log, "run commands for project"; "project_name" => project_name.clone());
+        for project in self.projects.iter() {
+            if project.name.clone() == project_name.clone() {
+                debug!(log, "processor"; "project_name" => project.name.clone());
+                for command in project.commands.iter() {
+                    debug!(log, "processor"; "command" => command.clone());
+                    // will have to iterate commands here, or collect into a script and execute
+                    Command::new("echo")
+                        .arg("test".to_string())
+                        .spawn()
+                        .expect("failed");
+                }
             }
         }
-
-        Command::new("bash")
-            // .arg(self.bash_file_path.clone())
-            .spawn()
-            .expect("failed to execute process");
     }
 }
 
@@ -64,7 +65,7 @@ fn verify(headers: &HeaderMap, state: &str) -> bool {
 async fn webhook_handler(
     data: web::Data<Config>,
     req: HttpRequest,
-    web::Path(project): web::Path<String>,
+    // web::Path(project): web::Path<String>,
     mut payload: web::Payload,
 ) -> Result<HttpResponse, Error> {
     let log = slog_scope::logger();
@@ -85,13 +86,14 @@ async fn webhook_handler(
 
         debug!(log, "webhook data"; "event_type" => webhook.event_type());
         debug!(log, "webhook data"; "repository_url" => webhook.repository_url());
-        debug!(log, "webhook data"; "action" => webhook.action());
+        // debug!(log, "webhook data"; "action" => webhook.action());
         debug!(log, "webhook data"; "target_branch" => webhook.target_branch());
         debug!(log, "webhook data"; "source_branch" => webhook.source_branch());
         debug!(log, "webhook data"; "state" => webhook.state());
         debug!(log, "webhook data"; "merge_status" => webhook.merge_status());
 
-        data.execute_commands(project);
+        let project = "sample";
+        data.execute_commands(project.to_string());
 
         Ok(HttpResponse::Ok().into())
     } else {
@@ -114,7 +116,8 @@ async fn main() -> std::io::Result<()> {
     let _guard = slog_scope::set_global_logger(log);
 
     let config_file = std::fs::File::open(shook.config)?;
-    let config: Config = serde_yaml::from_reader(config_file).unwrap();
+    let mut config: Config = serde_yaml::from_reader(config_file).unwrap();
+    config.token = shook.token;
     // let config = Config { token: shook.token, services };
 
     let logger = slog_scope::logger();
@@ -123,8 +126,12 @@ async fn main() -> std::io::Result<()> {
 
     let config_data = web::Data::new(config);
 
-    HttpServer::new(move || App::new().app_data(config_data.clone()).service(webhook_handler))
-        .bind(format!("{}:{}", shook.host, shook.port))?
-        .run()
-        .await
+    HttpServer::new(move || {
+        App::new()
+            .app_data(config_data.clone())
+            .service(webhook_handler)
+    })
+    .bind(format!("{}:{}", shook.host, shook.port))?
+    .run()
+    .await
 }
