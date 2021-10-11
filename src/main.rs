@@ -65,7 +65,7 @@ fn verify(headers: &HeaderMap, state: &str) -> bool {
 async fn webhook_handler(
     data: web::Data<Config>,
     req: HttpRequest,
-    // web::Path(project): web::Path<String>,
+    web::Path(project): web::Path<String>,
     mut payload: web::Payload,
 ) -> Result<HttpResponse, Error> {
     let log = slog_scope::logger();
@@ -86,13 +86,12 @@ async fn webhook_handler(
 
         debug!(log, "webhook data"; "event_type" => webhook.event_type());
         debug!(log, "webhook data"; "repository_url" => webhook.repository_url());
-        // debug!(log, "webhook data"; "action" => webhook.action());
+        debug!(log, "webhook data"; "action" => webhook.action());
         debug!(log, "webhook data"; "target_branch" => webhook.target_branch());
         debug!(log, "webhook data"; "source_branch" => webhook.source_branch());
         debug!(log, "webhook data"; "state" => webhook.state());
         debug!(log, "webhook data"; "merge_status" => webhook.merge_status());
 
-        let project = "sample";
         data.execute_commands(project.to_string());
 
         Ok(HttpResponse::Ok().into())
@@ -118,7 +117,6 @@ async fn main() -> std::io::Result<()> {
     let config_file = std::fs::File::open(shook.config)?;
     let mut config: Config = serde_yaml::from_reader(config_file).unwrap();
     config.token = shook.token;
-    // let config = Config { token: shook.token, services };
 
     let logger = slog_scope::logger();
     let app_log = logger.new(o!("host" => shook.host.clone(), "port" => shook.port.clone()));
