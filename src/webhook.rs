@@ -23,30 +23,30 @@ pub struct Webhook {
 
 impl Webhook {
     pub fn event_type(&self) -> String {
-        self.event_type
+        self.event_type.clone()
     }
 
     pub fn repository_url(&self) -> String {
-        self.repository.url
+        self.repository.url.clone()
     }
 
     pub fn action(&self) -> String {
-        self.object_attributes.action
+        self.object_attributes.action.clone()
     }
 
     pub fn target_branch(&self) -> String {
-        self.object_attributes.target_branch
+        self.object_attributes.target_branch.clone()
     }
 
     pub fn source_branch(&self) -> String {
-        self.object_attributes.source_branch
+        self.object_attributes.source_branch.clone()
     }
 
     pub fn state(&self) -> String {
-        self.object_attributes.state
+        self.object_attributes.state.clone()
     }
 
     pub fn merge_status(&self) -> String {
-        self.object_attributes.merge_status
+        self.object_attributes.merge_status.clone()
     }
 }
