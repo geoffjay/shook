@@ -5,54 +5,22 @@ extern crate slog_json;
 extern crate slog_scope;
 
 mod cmd;
+mod config;
 mod webhook;
 
 use actix_web::{
     error, http::header::HeaderMap, post, web, App, Error, HttpRequest, HttpResponse, HttpServer,
 };
+use async_std::task;
 use chrono::prelude::*;
 use futures::StreamExt;
-use serde::Deserialize;
 use slog::Drain;
-use std::process::Command;
 
 use cmd::ShookArgs;
+use config::Config;
 use webhook::Webhook;
 
 const MAX_SIZE: usize = 262_144; // max payload size is 256k
-
-#[derive(Deserialize)]
-struct Project {
-    name: String,
-    commands: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct Config {
-    #[serde(skip)]
-    token: String,
-    projects: Vec<Project>,
-}
-
-impl Config {
-    fn execute_commands(&self, project_name: String) {
-        let log = slog_scope::logger();
-        debug!(log, "run commands for project"; "project_name" => project_name.clone());
-        for project in self.projects.iter() {
-            if project.name.clone() == project_name.clone() {
-                debug!(log, "processor"; "project_name" => project.name.clone());
-                for command in project.commands.iter() {
-                    debug!(log, "processor"; "command" => command.clone());
-                    // will have to iterate commands here, or collect into a script and execute
-                    Command::new("echo")
-                        .arg("test".to_string())
-                        .spawn()
-                        .expect("failed");
-                }
-            }
-        }
-    }
-}
 
 fn verify(headers: &HeaderMap, state: &str) -> bool {
     match headers.get("X-Gitlab-Token") {
@@ -84,15 +52,15 @@ async fn webhook_handler(
 
         let webhook = serde_json::from_slice::<Webhook>(&body)?;
 
-        debug!(log, "webhook data"; "event_type" => webhook.event_type());
-        debug!(log, "webhook data"; "repository_url" => webhook.repository_url());
-        debug!(log, "webhook data"; "action" => webhook.action());
-        debug!(log, "webhook data"; "target_branch" => webhook.target_branch());
-        debug!(log, "webhook data"; "source_branch" => webhook.source_branch());
-        debug!(log, "webhook data"; "state" => webhook.state());
-        debug!(log, "webhook data"; "merge_status" => webhook.merge_status());
+        trace!(log, "webhook data"; "event_type" => webhook.event_type());
+        trace!(log, "webhook data"; "repository_url" => webhook.repository_url());
+        trace!(log, "webhook data"; "action" => webhook.action());
+        trace!(log, "webhook data"; "target_branch" => webhook.target_branch());
+        trace!(log, "webhook data"; "source_branch" => webhook.source_branch());
+        trace!(log, "webhook data"; "state" => webhook.state());
+        trace!(log, "webhook data"; "merge_status" => webhook.merge_status());
 
-        data.execute_commands(project.to_string());
+        task::spawn(async move { data.execute_commands(project.to_string()).await });
 
         Ok(HttpResponse::Ok().into())
     } else {
@@ -105,13 +73,13 @@ async fn webhook_handler(
 async fn main() -> std::io::Result<()> {
     let shook = ShookArgs::new();
     let drain = slog_json::Json::new(std::io::stdout())
-        .set_pretty(true)
+        .set_pretty(false)
         .add_default_keys()
         .build()
         .fuse();
     let drain = slog_async::Async::new(drain).build().fuse();
     let drain = slog::LevelFilter(drain, shook.level).fuse();
-    let log = slog::Logger::root(drain, o!("format" => "pretty"));
+    let log = slog::Logger::root(drain, o!());
     let _guard = slog_scope::set_global_logger(log);
 
     let config_file = std::fs::File::open(shook.config)?;

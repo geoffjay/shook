@@ -1,6 +1,11 @@
 projects:
   - name: sample
+    env:
+      LOG: /tmp/sample.log
     commands:
-      export LOG=/tmp/sample.log
-      touch $LOG
-      echo test >> $LOG
+      - "echo $LOG"
+      - "sleep 5"
+      - "touch $LOG"
+      - "echo write to file"
+      - "echo test >> $LOG"
+      - echo done
