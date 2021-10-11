@@ -1,4 +1,4 @@
-[![release status](https://github.com/geoffjay/shook/workflows/release/badge.svg)](https://github.com/geoffjay/shook/actions?query=workflow%3A%22release%22)
+[![release status](https://github.com/geoffjay/shook/actions/workflows/release.yml/badge.svg)](https://github.com/geoffjay/shook/actions?query=workflow%3A%22release%22)
 
 # Shook
 
