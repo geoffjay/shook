@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::str;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Project {
     pub name: String,
     pub token: String,
@@ -23,39 +23,40 @@ impl Project {
             Some(value) => value.clone(),
         }
     }
+
+    pub fn should_deploy(&self, branch: String, action: String, state: String) -> bool {
+        branch == "main" && action == "merge" && state == "merged"
+    }
 }
 
 impl Config {
-    pub fn get_project(&self, project: String) -> Option<&Project> {
+    pub fn get_project(&self, project: String) -> Option<Project> {
         for item in &self.projects {
             if item.name.clone() == project {
-                return Some(item);
+                return Some(item.clone());
             }
         }
         None
     }
 
-    pub async fn execute_commands(&self, project_name: String) {
+    /// Process the list of configured commands. There's lifetime issues if this
+    /// is on the project, so it's here because the config is kept as app data
+    /// that's passed into handlers.
+    pub async fn execute_commands(&self, project: Project) {
         let log = slog_scope::logger();
 
-        debug!(log, "run commands for project"; "project_name" => project_name.clone());
+        debug!(log, "command processor"; "project_name" => project.name.clone());
+        for command in project.commands.iter() {
+            let output = Command::new("bash")
+                .arg("-c")
+                .arg(command)
+                .envs(project.env())
+                .output()
+                .expect("failed to execute command");
 
-        for project in self.projects.iter() {
-            if project.name.clone() == project_name.clone() {
-                debug!(log, "processor"; "project_name" => project.name.clone());
-                for command in project.commands.iter() {
-                    let output = Command::new("bash")
-                        .arg("-c")
-                        .arg(command)
-                        .envs(project.env())
-                        .output()
-                        .expect("failed to execute command");
-
-                    debug!(log, "processor"; "status" => format!("{:?}", output.status));
-                    debug!(log, "processor"; "stdout" => str::from_utf8(&output.stdout).unwrap());
-                    debug!(log, "processor"; "stderr" => str::from_utf8(&output.stderr).unwrap());
-                }
-            }
+            debug!(log, "processor"; "status" => format!("{:?}", output.status));
+            debug!(log, "processor"; "stdout" => str::from_utf8(&output.stdout).unwrap());
+            debug!(log, "processor"; "stderr" => str::from_utf8(&output.stderr).unwrap());
         }
     }
 }

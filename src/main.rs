@@ -30,17 +30,17 @@ fn verify(headers: &HeaderMap, state: &str) -> bool {
     }
 }
 
-#[post("/{project}")]
+#[post("/{project_name}")]
 async fn webhook_handler(
     data: web::Data<Config>,
     req: HttpRequest,
-    web::Path(project): web::Path<String>,
+    web::Path(project_name): web::Path<String>,
     mut payload: web::Payload,
 ) -> Result<HttpResponse, Error> {
     let log = slog_scope::logger();
-    let project_data = data.get_project(project.clone()).unwrap();
+    let project = data.get_project(project_name.clone()).unwrap();
 
-    if verify(req.headers(), &project_data.token) {
+    if verify(req.headers(), &project.token) {
         debug!(log, "X-Gitlab-Token header verified");
 
         let mut body = web::BytesMut::new();
@@ -55,15 +55,17 @@ async fn webhook_handler(
 
         let webhook = serde_json::from_slice::<Webhook>(&body)?;
 
-        trace!(log, "webhook data"; "event_type" => webhook.event_type());
-        trace!(log, "webhook data"; "repository_url" => webhook.repository_url());
-        trace!(log, "webhook data"; "action" => webhook.action());
-        trace!(log, "webhook data"; "target_branch" => webhook.target_branch());
-        trace!(log, "webhook data"; "source_branch" => webhook.source_branch());
-        trace!(log, "webhook data"; "state" => webhook.state());
-        trace!(log, "webhook data"; "merge_status" => webhook.merge_status());
+        debug!(log, "webhook data"; "event_type" => webhook.event_type());
+        debug!(log, "webhook data"; "repository_url" => webhook.repository_url());
+        debug!(log, "webhook data"; "action" => webhook.action());
+        debug!(log, "webhook data"; "target_branch" => webhook.target_branch());
+        debug!(log, "webhook data"; "source_branch" => webhook.source_branch());
+        debug!(log, "webhook data"; "state" => webhook.state());
+        debug!(log, "webhook data"; "merge_status" => webhook.merge_status());
 
-        task::spawn(async move { data.execute_commands(project.to_string()).await });
+        if project.should_deploy(webhook.target_branch(), webhook.action(), webhook.state()) {
+            task::spawn(async move { data.execute_commands(project).await });
+        }
 
         Ok(HttpResponse::Ok().into())
     } else {
