@@ -15,7 +15,7 @@ unzip $(find . -iname "shook_*.zip")
 sudo mv shook /usr/local/bin/
 ```
 
-Check the [setup](SETUP.md) documentation for any remaining steps.
+Check the [setup](doc/SETUP.md) documentation for any remaining steps.
 
 ## Develop
 
