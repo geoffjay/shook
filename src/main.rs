@@ -8,6 +8,7 @@ mod cmd;
 mod config;
 mod webhook;
 
+use actix_slog::StructuredLogger;
 use actix_web::{
     error, http::header::HeaderMap, post, web, App, Error, HttpRequest, HttpResponse, HttpServer,
 };
@@ -37,7 +38,9 @@ async fn webhook_handler(
     mut payload: web::Payload,
 ) -> Result<HttpResponse, Error> {
     let log = slog_scope::logger();
-    if verify(req.headers(), &data.token) {
+    let project_data = data.get_project(project.clone()).unwrap();
+
+    if verify(req.headers(), &project_data.token) {
         debug!(log, "X-Gitlab-Token header verified");
 
         let mut body = web::BytesMut::new();
@@ -83,8 +86,7 @@ async fn main() -> std::io::Result<()> {
     let _guard = slog_scope::set_global_logger(log);
 
     let config_file = std::fs::File::open(shook.config)?;
-    let mut config: Config = serde_yaml::from_reader(config_file).unwrap();
-    config.token = shook.token;
+    let config: Config = serde_yaml::from_reader(config_file).unwrap();
 
     let logger = slog_scope::logger();
     let app_log = logger.new(o!("host" => shook.host.clone(), "port" => shook.port.clone()));
@@ -94,6 +96,9 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(StructuredLogger::new(
+                logger.new(o!("version" => "undefined")),
+            ))
             .app_data(config_data.clone())
             .service(webhook_handler)
     })

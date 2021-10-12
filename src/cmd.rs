@@ -5,7 +5,6 @@ use std::ffi::OsString;
 
 #[derive(Debug, PartialEq)]
 pub struct ShookArgs {
-    pub token: String,
     pub port: String,
     pub host: String,
     pub config: String,
@@ -26,14 +25,6 @@ impl ShookArgs {
             .version("0.1")
             .about("Gitlab Webhook Handler")
             .author("Geoff Johnson <geoff.jay@gmail.com>")
-            .arg(
-                Arg::with_name("token")
-                    .long("token")
-                    .short("t")
-                    .takes_value(true)
-                    .help("X-Gitlab-Token")
-                    .required(true),
-            )
             .arg(
                 Arg::with_name("port")
                     .long("port")
@@ -64,9 +55,6 @@ impl ShookArgs {
             )
             .get_matches_from_safe(args)?;
 
-        let token = matches
-            .value_of("token")
-            .expect("A Webhook token is required");
         let port = matches.value_of("port").unwrap_or("5000");
         let host = matches.value_of("host").unwrap_or("0.0.0.0");
         let config = matches.value_of("config").unwrap_or("config.yml");
@@ -77,7 +65,6 @@ impl ShookArgs {
         };
 
         Ok(ShookArgs {
-            token: token.to_string(),
             port: port.to_string(),
             host: host.to_string(),
             config: config.to_string(),

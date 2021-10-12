@@ -54,9 +54,25 @@ Go to the webhooks preferences for a project, eg.
 https://gitlab.com/geoff.jay/shook/-/hooks, and enter:
 
 - the host address given by `ngrok` or a local network IP
-- a secret token that will be passed to the service with `--token=<secret>`
+- a secret token that will be configured with the project definition
 - check "Merge request events", uncheck all other triggers
 - uncheck "Enable SSL verification"
+
+## Configure
+
+```shell
+sudo mkdir /etc/shook/
+cat <<EOF | sudo tee /etc/shook/config.yml
+projects:
+  - name: sample
+    token: really-gud-secret
+    env:
+      LOG: /tmp/sample.log
+    commands:
+      - "touch $LOG"
+      - "echo test >> $LOG"
+EOF
+```
 
 ## Run `shook` with `systemd`
 
@@ -71,7 +87,7 @@ StartLimitIntervalSec=0
 Type=simple
 Restart=always
 RestartSec=1
-ExecStart=/usr/local/bin/shook
+ExecStart=/usr/local/bin/shook -h 127.0.0.1 -c /etc/shook/config.yml
 
 [Install]
 WantedBy=multi-user.target

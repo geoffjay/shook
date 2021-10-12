@@ -13,6 +13,7 @@ keywords = ["gitlab", "webhook"]
 categories = ["command-line-utilities", "web-programming::http-client"]
 
 [dependencies]
+actix-slog = "0.2.1"
 actix-web = "3.3.2"
 async-std = "1.10.0"
 chrono = "0.4.0"

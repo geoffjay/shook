@@ -4,16 +4,31 @@
 
 Trivial server to listen to Gitlab webhooks and execute a set of commands.
 
-## Build
+## Install
+
+```shell
+curl -s https://api.github.com/repos/geoffjay/shook/releases/latest \
+    | jq '.assets[] | select(.name|test("^shook.*linux-musl.zip$")) | .browser_download_url' \
+    | tr -d \" \
+    | wget -qi -
+unzip $(find . -iname "shook_*.zip")
+sudo mv shook /usr/local/bin/
+```
+
+Check the [setup](SETUP.md) documentation for any remaining steps.
+
+## Develop
+
+### Build
 
 ```shell
 cargo build
 ```
 
-## Execute
+### Execute
 
 ```shell
-cargo run -- --token=super-gud-secret
+cargo run
 ```
 
 To see all arguments that are available execute the command `cargo run -- --help`.

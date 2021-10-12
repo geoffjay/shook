@@ -1,5 +1,6 @@
 projects:
   - name: sample
+    token: really-gud-secret
     env:
       LOG: /tmp/sample.log
     commands:

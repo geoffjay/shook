@@ -4,16 +4,15 @@ use std::process::Command;
 use std::str;
 
 #[derive(Deserialize)]
-struct Project {
-    name: String,
+pub struct Project {
+    pub name: String,
+    pub token: String,
     env: Option<HashMap<String, String>>,
     commands: Vec<String>,
 }
 
 #[derive(Deserialize)]
 pub struct Config {
-    #[serde(skip)]
-    pub token: String,
     projects: Vec<Project>,
 }
 
@@ -27,6 +26,15 @@ impl Project {
 }
 
 impl Config {
+    pub fn get_project(&self, project: String) -> Option<&Project> {
+        for item in &self.projects {
+            if item.name.clone() == project {
+                return Some(item);
+            }
+        }
+        None
+    }
+
     pub async fn execute_commands(&self, project_name: String) {
         let log = slog_scope::logger();
 
@@ -61,6 +69,7 @@ mod tests {
         let input = r#"
           projects:
             - name: sample
+              token: really-gud-secret
               env:
                 LOG: /tmp/sample.log
               commands:
@@ -72,6 +81,7 @@ mod tests {
         let env = project.env();
 
         assert_eq!(project.name, "sample".to_string());
+        assert_eq!(project.token, "really-gud-secret".to_string());
         assert_eq!(env.len(), 1);
         assert_eq!(
             env.get(&"LOG".to_string()),
