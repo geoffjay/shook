@@ -10,11 +10,13 @@ mod webhook;
 
 use actix_slog::StructuredLogger;
 use actix_web::{
-    error, http::header::HeaderMap, post, web, App, Error, HttpRequest, HttpResponse, HttpServer,
+    error, get, http::header::HeaderMap, post, web, App, Error, HttpRequest, HttpResponse,
+    HttpServer,
 };
 use async_std::task;
 use chrono::prelude::*;
 use futures::StreamExt;
+use serde::Deserialize;
 use slog::Drain;
 
 use cmd::ShookArgs;
@@ -23,6 +25,11 @@ use webhook::Webhook;
 
 const MAX_SIZE: usize = 262_144; // max payload size is 256k
 
+#[derive(Deserialize)]
+struct TriggerInfo {
+    repo: String,
+}
+
 fn verify(headers: &HeaderMap, state: &str) -> bool {
     match headers.get("X-Gitlab-Token") {
         Some(value) => value.to_str().unwrap() == state,
@@ -30,7 +37,7 @@ fn verify(headers: &HeaderMap, state: &str) -> bool {
     }
 }
 
-#[post("/{project_name}")]
+#[post("/webhook/{project_name}")]
 async fn webhook_handler(
     data: web::Data<Config>,
     req: HttpRequest,
@@ -54,16 +61,17 @@ async fn webhook_handler(
         }
 
         let webhook = serde_json::from_slice::<Webhook>(&body)?;
+        webhook.dump();
 
-        debug!(log, "webhook data"; "event_type" => webhook.event_type());
-        debug!(log, "webhook data"; "repository_url" => webhook.repository_url());
-        debug!(log, "webhook data"; "action" => webhook.action());
-        debug!(log, "webhook data"; "target_branch" => webhook.target_branch());
-        debug!(log, "webhook data"; "source_branch" => webhook.source_branch());
-        debug!(log, "webhook data"; "state" => webhook.state());
-        debug!(log, "webhook data"; "merge_status" => webhook.merge_status());
-
-        if project.should_deploy(webhook.target_branch(), webhook.action(), webhook.state()) {
+        if config::should_deploy(
+            webhook.target_branch(),
+            webhook.action(),
+            webhook.merge_status(),
+        ) {
+            match webhook.clone_repository() {
+                Ok(project) => debug!(log, "cloned repository"; "project" => project),
+                Err(e) => error!(log, "failed to clone"; "error" => e),
+            }
             task::spawn(async move { data.execute_commands(project).await });
         }
 
@@ -71,6 +79,55 @@ async fn webhook_handler(
     } else {
         warn!(log, "X-Gitlab-Token header verification failed");
         Ok(HttpResponse::Unauthorized().into())
+    }
+}
+
+#[get("/trigger/{project_name}")]
+async fn trigger(
+    data: web::Data<Config>,
+    web::Path(project_name): web::Path<String>,
+    info: web::Query<TriggerInfo>,
+) -> Result<HttpResponse, Error> {
+    let log = slog_scope::logger();
+    let project = data.get_project(project_name.clone()).unwrap();
+    debug!(log, "trigger project"; "project" => project_name.clone(), "repo" => info.repo.clone());
+    let input = format!(
+        r#"{{
+        "event_type": "merge_request",
+        "project": {{
+            "git_http_url": "{}"
+        }},
+        "repository": {{
+            "url": "{}"
+        }},
+        "object_attributes": {{
+            "action": "merge",
+            "target_branch": "main",
+            "source_branch": "staging",
+            "state": "merge",
+            "merge_status": "merged"
+        }}
+    }}"#,
+        info.repo.clone(),
+        info.repo.clone()
+    );
+    let webhook = serde_json::from_str::<Webhook>(&input).unwrap();
+    webhook.dump();
+
+    if config::should_deploy(
+        webhook.target_branch(),
+        webhook.action(),
+        webhook.merge_status(),
+    ) {
+        debug!(log, "handle deployment"; "project" => project_name);
+        match webhook.clone_repository() {
+            Ok(project) => debug!(log, "cloned repository"; "{}" => project),
+            Err(e) => error!(log, "failed to clone"; "{}" => e),
+        }
+        task::spawn(async move { data.execute_commands(project).await });
+        Ok(HttpResponse::Ok().into())
+    } else {
+        Ok(HttpResponse::InternalServerError().into())
     }
 }
 
@@ -103,6 +160,7 @@ async fn main() -> std::io::Result<()> {
             ))
             .app_data(config_data.clone())
             .service(webhook_handler)
+            .service(trigger)
     })
     .bind(format!("{}:{}", shook.host, shook.port))?
     .run()

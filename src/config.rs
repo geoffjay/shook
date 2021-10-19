@@ -16,16 +16,16 @@ pub struct Config {
     projects: Vec<Project>,
 }
 
+pub fn should_deploy(branch: String, action: String, status: String) -> bool {
+    branch == "main" && action == "merge" && status == "merged"
+}
+
 impl Project {
     pub fn env(&self) -> HashMap<String, String> {
         match &self.env {
             None => HashMap::new(),
             Some(value) => value.clone(),
         }
-    }
-
-    pub fn should_deploy(&self, branch: String, action: String, state: String) -> bool {
-        branch == "main" && action == "merge" && state == "merged"
     }
 }
 
@@ -64,6 +64,30 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn it_should_deploy() {
+        assert!(should_deploy(
+            "main".to_string(),
+            "merge".to_string(),
+            "merged".to_string()
+        ));
+        assert!(!should_deploy(
+            "staging".to_string(),
+            "merge".to_string(),
+            "merged".to_string()
+        ));
+        assert!(!should_deploy(
+            "main".to_string(),
+            "open".to_string(),
+            "merged".to_string()
+        ));
+        assert!(!should_deploy(
+            "main".to_string(),
+            "merge".to_string(),
+            "closed".to_string()
+        ));
+    }
 
     #[test]
     fn it_deserializes() {
