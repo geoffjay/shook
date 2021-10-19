@@ -21,12 +21,13 @@ use slog::Drain;
 
 use cmd::ShookArgs;
 use config::Config;
-use webhook::Webhook;
+use webhook::gitlab::Webhook;
 
 const MAX_SIZE: usize = 262_144; // max payload size is 256k
 
 #[derive(Deserialize)]
 struct TriggerInfo {
+    path: String,
     repo: String,
 }
 
@@ -93,22 +94,25 @@ async fn trigger(
     debug!(log, "trigger project"; "project" => project_name.clone(), "repo" => info.repo.clone());
     let input = format!(
         r#"{{
-        "event_type": "merge_request",
-        "project": {{
-            "git_http_url": "{}"
-        }},
-        "repository": {{
-            "url": "{}"
-        }},
-        "object_attributes": {{
-            "action": "merge",
-            "target_branch": "main",
-            "source_branch": "staging",
-            "state": "merge",
-            "merge_status": "merged"
-        }}
-    }}"#,
+            "event_type": "merge_request",
+            "project": {{
+                "default_branch": "main",
+                "git_http_url": "{}",
+                "path_with_namespace": "{}"
+            }},
+            "repository": {{
+                "url": "{}"
+            }},
+            "object_attributes": {{
+                "action": "merge",
+                "target_branch": "main",
+                "source_branch": "staging",
+                "state": "merge",
+                "merge_status": "merged"
+            }}
+        }}"#,
         info.repo.clone(),
+        info.path.clone(),
         info.repo.clone()
     );
     let webhook = serde_json::from_str::<Webhook>(&input).unwrap();

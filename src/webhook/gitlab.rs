@@ -10,9 +10,10 @@ struct Repository {
 
 #[derive(Deserialize)]
 struct Project {
-    path_with_namespace: Option<String>,
+    default_branch: Option<String>,
     git_ssh_url: Option<String>,
     git_http_url: Option<String>,
+    path_with_namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -35,6 +36,13 @@ pub struct Webhook {
 impl Webhook {
     pub fn event_type(&self) -> String {
         match &self.event_type {
+            None => "undefined".to_string(),
+            Some(value) => value.clone(),
+        }
+    }
+
+    pub fn default_branch(&self) -> String {
+        match &self.project.default_branch {
             None => "undefined".to_string(),
             Some(value) => value.clone(),
         }
@@ -116,15 +124,65 @@ impl Webhook {
         }
     }
 
-    pub fn clone_repository(&self) -> Result<String, io::Error> {
-        let project = "test".to_string();
-        let root = Path::new("/var/cache/shook/");
-        env::set_current_dir(&root)?;
+    fn fast_forward(&self, path: &Path) -> Result<(), git2::Error> {
+        let repo = git2::Repository::open(path)?;
 
-        let _ = match git2::Repository::clone(&self.repository_url(), &project) {
+        repo.find_remote("origin")?
+            .fetch(&[self.default_branch()], None, None)?;
+
+        let fetch_head = repo.find_reference("FETCH_HEAD")?;
+        let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
+        let analysis = repo.merge_analysis(&[&fetch_commit])?;
+        if analysis.0.is_up_to_date() {
+            Ok(())
+        } else if analysis.0.is_fast_forward() {
+            let refname = format!("refs/heads/{}", self.default_branch());
+            let mut reference = repo.find_reference(&refname)?;
+            reference.set_target(fetch_commit.id(), "Fast-Forward")?;
+            repo.set_head(&refname)?;
+            repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
+        } else {
+            Err(git2::Error::from_str("Fast-forward only!"))
+        }
+    }
+
+    fn reset(&self, path: &Path) {
+        let repo = match git2::Repository::open(path) {
             Ok(repo) => repo,
-            Err(e) => panic!("failed to clone repository: {}", e),
+            Err(e) => panic!("Failed to open: {}", e),
         };
+        repo.reset(
+            &repo.revparse_single("HEAD").unwrap(),
+            git2::ResetType::Hard,
+            None,
+        )
+        .unwrap();
+    }
+
+    pub fn clone_repository(&self) -> Result<String, io::Error> {
+        let project = self.project_name();
+        let base = "/var/cache/shook/".to_string();
+        let path = format!("{}{}", base, project);
+        let repo_path = Path::new(&path);
+
+        match repo_path.exists() && repo_path.is_dir() {
+            true => {
+                let root = Path::new(&path);
+                env::set_current_dir(&root)?;
+                self.reset(repo_path);
+                if let Err(e) = self.fast_forward(repo_path) {
+                    panic!("Failed to pull: {}", e)
+                }
+            }
+            false => {
+                let root = Path::new(&base);
+                env::set_current_dir(&root)?;
+                let _ = match git2::Repository::clone(&self.repository_url(), &project) {
+                    Ok(repo) => repo,
+                    Err(e) => panic!("failed to clone repository: {}", e),
+                };
+            }
+        }
 
         Ok(format!("/var/cache/shook/{}", project))
     }
