@@ -1,9 +1,12 @@
 # Setup
 
+This guide covers the setup of Shook webhook service for both GitLab and GitHub.
+For detailed GitHub-specific setup instructions, see [GITHUB_SETUP.md](GITHUB_SETUP.md).
+
 ## Tunnel
 
 This isn't necessary if the listening port can be opened to the outside world,
-or if the GitLab instance is running on the same network as the service.
+or if the GitLab/GitHub instance is running on the same network as the service.
 
 ```shell
 ngrok http -subdomain=shook 5000
@@ -50,6 +53,8 @@ sudo systemctl start ngrok.service
 
 ## Create Webhook
 
+### GitLab
+
 Go to the webhooks preferences for a project, eg.
 https://gitlab.com/geoff.jay/shook/-/hooks, and enter:
 
@@ -58,12 +63,17 @@ https://gitlab.com/geoff.jay/shook/-/hooks, and enter:
 - check "Merge request events", uncheck all other triggers
 - uncheck "Enable SSL verification"
 
+### GitHub
+
+See [GITHUB_SETUP.md](GITHUB_SETUP.md) for detailed GitHub webhook configuration instructions.
+
 ## Configure
 
 ```shell
 sudo mkdir /etc/shook/
 cat <<EOF | sudo tee /etc/shook/config.yml
 projects:
+  # GitLab project (provider defaults to gitlab)
   - name: sample
     token: really-gud-secret
     env:
@@ -71,6 +81,16 @@ projects:
     commands:
       - "touch $LOG"
       - "echo test >> $LOG"
+
+  # GitHub project example
+  - name: github-sample
+    provider: github
+    token: github-webhook-secret
+    env:
+      LOG: /tmp/github.log
+    commands:
+      - "touch $LOG"
+      - "echo github test >> $LOG"
 EOF
 ```
 

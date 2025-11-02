@@ -1,4 +1,8 @@
+# Example configuration for Shook webhook service
+# Supports both GitLab and GitHub webhooks
+
 projects:
+  # GitLab project example (provider defaults to gitlab if not specified)
   - name: sample
     token: really-gud-secret
     env:
@@ -10,3 +14,27 @@ projects:
       - "echo write to file"
       - "echo test >> $LOG"
       - echo done
+
+  # GitHub project example
+  - name: github-sample
+    provider: github
+    token: github-webhook-secret   # This is used as the HMAC secret for signature verification
+    env:
+      DEPLOY_DIR: /var/www/app
+      NODE_ENV: production
+    commands:
+      - "echo 'Deploying GitHub project...'"
+      - "npm install"
+      - "npm run build"
+      - "pm2 restart app"
+
+  # Another GitLab project (explicitly specifying provider)
+  - name: gitlab-app
+    provider: gitlab
+    token: another-gitlab-token
+    env:
+      APP_DIR: /opt/apps/myapp
+    commands:
+      - "cd $APP_DIR"
+      - "docker-compose pull"
+      - "docker-compose up -d"

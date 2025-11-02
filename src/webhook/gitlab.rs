@@ -133,11 +133,13 @@ impl Webhook {
         let fetch_head = repo.find_reference("FETCH_HEAD")?;
         let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
         let analysis = repo.merge_analysis(&[&fetch_commit])?;
+
         if analysis.0.is_up_to_date() {
             Ok(())
         } else if analysis.0.is_fast_forward() {
             let refname = format!("refs/heads/{}", self.default_branch());
             let mut reference = repo.find_reference(&refname)?;
+
             reference.set_target(fetch_commit.id(), "Fast-Forward")?;
             repo.set_head(&refname)?;
             repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))

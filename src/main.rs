@@ -20,8 +20,9 @@ use serde::Deserialize;
 use slog::Drain;
 
 use cmd::ShookArgs;
-use config::Config;
-use webhook::gitlab::Webhook;
+use config::{Config, Provider};
+use webhook::gitlab::Webhook as GitLabWebhook;
+use webhook::github::{self, Webhook as GitHubWebhook};
 
 const MAX_SIZE: usize = 262_144; // max payload size is 256k
 
@@ -31,9 +32,21 @@ struct TriggerInfo {
     repo: String,
 }
 
-fn verify(headers: &HeaderMap, state: &str) -> bool {
+fn verify_gitlab(headers: &HeaderMap, token: &str) -> bool {
     match headers.get("X-Gitlab-Token") {
-        Some(value) => value.to_str().unwrap() == state,
+        Some(value) => value.to_str().unwrap() == token,
+        None => false,
+    }
+}
+
+fn verify_github(headers: &HeaderMap, secret: &str, body: &[u8]) -> bool {
+    match headers.get("X-Hub-Signature-256") {
+        Some(value) => {
+            match value.to_str() {
+                Ok(signature) => github::verify_signature(secret, body, signature),
+                Err(_) => false,
+            }
+        }
         None => false,
     }
 }
@@ -48,39 +61,68 @@ async fn webhook_handler(
     let log = slog_scope::logger();
     let project = data.get_project(project_name.clone()).unwrap();
 
-    if verify(req.headers(), &project.token) {
-        debug!(log, "X-Gitlab-Token header verified");
-
-        let mut body = web::BytesMut::new();
-        while let Some(chunk) = payload.next().await {
-            let chunk = chunk?;
-            // limit max size of in-memory payload
-            if (body.len() + chunk.len()) > MAX_SIZE {
-                return Err(error::ErrorBadRequest("overflow"));
-            }
-            body.extend_from_slice(&chunk);
+    // Read the body first
+    let mut body = web::BytesMut::new();
+    while let Some(chunk) = payload.next().await {
+        let chunk = chunk?;
+        // limit max size of in-memory payload
+        if (body.len() + chunk.len()) > MAX_SIZE {
+            return Err(error::ErrorBadRequest("overflow"));
         }
-
-        let webhook = serde_json::from_slice::<Webhook>(&body)?;
-        webhook.dump();
-
-        if config::should_deploy(
-            webhook.target_branch(),
-            webhook.action(),
-            webhook.merge_status(),
-        ) {
-            match webhook.clone_repository() {
-                Ok(project) => debug!(log, "cloned repository"; "project" => project),
-                Err(e) => error!(log, "failed to clone"; "error" => e),
-            }
-            task::spawn(async move { data.execute_commands(project).await });
-        }
-
-        Ok(HttpResponse::Ok().into())
-    } else {
-        warn!(log, "X-Gitlab-Token header verification failed");
-        Ok(HttpResponse::Unauthorized().into())
+        body.extend_from_slice(&chunk);
     }
+
+    // Handle based on provider type
+    match project.provider {
+        Provider::GitLab => {
+            if !verify_gitlab(req.headers(), &project.token) {
+                warn!(log, "X-Gitlab-Token header verification failed");
+                return Ok(HttpResponse::Unauthorized().into());
+            }
+
+            debug!(log, "X-Gitlab-Token header verified");
+            let webhook = serde_json::from_slice::<GitLabWebhook>(&body)?;
+            webhook.dump();
+
+            if config::should_deploy(
+                webhook.target_branch(),
+                webhook.action(),
+                webhook.merge_status(),
+            ) {
+                match webhook.clone_repository() {
+                    Ok(repo_path) => debug!(log, "cloned repository"; "path" => repo_path),
+                    Err(e) => error!(log, "failed to clone"; "error" => e),
+                }
+                let project_clone = project.clone();
+                task::spawn(async move { data.execute_commands(project_clone).await });
+            }
+        }
+        Provider::GitHub => {
+            if !verify_github(req.headers(), &project.token, &body) {
+                warn!(log, "X-Hub-Signature-256 header verification failed");
+                return Ok(HttpResponse::Unauthorized().into());
+            }
+
+            debug!(log, "X-Hub-Signature-256 header verified");
+            let webhook = serde_json::from_slice::<GitHubWebhook>(&body)?;
+            webhook.dump();
+
+            if github::should_deploy_github(
+                webhook.action(),
+                webhook.is_merged(),
+                webhook.target_branch(),
+            ) {
+                match webhook.clone_repository() {
+                    Ok(repo_path) => debug!(log, "cloned repository"; "path" => repo_path),
+                    Err(e) => error!(log, "failed to clone"; "error" => e),
+                }
+                let project_clone = project.clone();
+                task::spawn(async move { data.execute_commands(project_clone).await });
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().into())
 }
 
 #[get("/trigger/{project_name}")]
@@ -91,47 +133,110 @@ async fn trigger(
 ) -> Result<HttpResponse, Error> {
     let log = slog_scope::logger();
     let project = data.get_project(project_name.clone()).unwrap();
-    debug!(log, "trigger project"; "project" => project_name.clone(), "repo" => info.repo.clone());
-    let input = format!(
-        r#"{{
-            "event_type": "merge_request",
-            "project": {{
-                "default_branch": "main",
-                "git_http_url": "{}",
-                "path_with_namespace": "{}"
-            }},
-            "repository": {{
-                "url": "{}"
-            }},
-            "object_attributes": {{
-                "action": "merge",
-                "target_branch": "main",
-                "source_branch": "staging",
-                "state": "merge",
-                "merge_status": "merged"
-            }}
-        }}"#,
-        info.repo.clone(),
-        info.path.clone(),
-        info.repo.clone()
-    );
-    let webhook = serde_json::from_str::<Webhook>(&input).unwrap();
-    webhook.dump();
+    debug!(log, "trigger project"; "project" => project_name.clone(), "repo" => info.repo.clone(), "provider" => format!("{:?}", project.provider));
 
-    if config::should_deploy(
-        webhook.target_branch(),
-        webhook.action(),
-        webhook.merge_status(),
-    ) {
-        debug!(log, "handle deployment"; "project" => project_name);
-        match webhook.clone_repository() {
-            Ok(project) => debug!(log, "cloned repository"; "{}" => project),
-            Err(e) => error!(log, "failed to clone"; "{}" => e),
+    match project.provider {
+        Provider::GitLab => {
+            let input = format!(
+                r#"{{
+                    "event_type": "merge_request",
+                    "project": {{
+                        "default_branch": "main",
+                        "git_http_url": "{}",
+                        "path_with_namespace": "{}"
+                    }},
+                    "repository": {{
+                        "url": "{}"
+                    }},
+                    "object_attributes": {{
+                        "action": "merge",
+                        "target_branch": "main",
+                        "source_branch": "staging",
+                        "state": "merge",
+                        "merge_status": "merged"
+                    }}
+                }}"#,
+                info.repo.clone(),
+                info.path.clone(),
+                info.repo.clone()
+            );
+            let webhook = serde_json::from_str::<GitLabWebhook>(&input).unwrap();
+            webhook.dump();
+
+            if config::should_deploy(
+                webhook.target_branch(),
+                webhook.action(),
+                webhook.merge_status(),
+            ) {
+                debug!(log, "handle deployment"; "project" => project_name);
+                match webhook.clone_repository() {
+                    Ok(repo_path) => debug!(log, "cloned repository"; "path" => repo_path),
+                    Err(e) => error!(log, "failed to clone"; "error" => e),
+                }
+                let project_clone = project.clone();
+                task::spawn(async move { data.execute_commands(project_clone).await });
+                Ok(HttpResponse::Ok().into())
+            } else {
+                Ok(HttpResponse::InternalServerError().into())
+            }
         }
-        task::spawn(async move { data.execute_commands(project).await });
-        Ok(HttpResponse::Ok().into())
-    } else {
-        Ok(HttpResponse::InternalServerError().into())
+        Provider::GitHub => {
+            // Extract repo name from path (last part)
+            let repo_name = info.path.split('/').last().unwrap_or(&info.path);
+            let input = format!(
+                r#"{{
+                    "action": "closed",
+                    "repository": {{
+                        "name": "{}",
+                        "full_name": "{}",
+                        "clone_url": "{}",
+                        "ssh_url": "{}",
+                        "default_branch": "main"
+                    }},
+                    "pull_request": {{
+                        "number": 999,
+                        "state": "closed",
+                        "title": "Test PR",
+                        "merged": true,
+                        "merged_at": "2024-01-01T00:00:00Z",
+                        "head": {{
+                            "ref": "feature-branch",
+                            "sha": "abc123"
+                        }},
+                        "base": {{
+                            "ref": "main",
+                            "sha": "def456"
+                        }}
+                    }},
+                    "sender": {{
+                        "login": "test-trigger"
+                    }}
+                }}"#,
+                repo_name,
+                info.path.clone(),
+                info.repo.clone(),
+                info.repo.clone()
+            );
+            let webhook = serde_json::from_str::<GitHubWebhook>(&input).unwrap();
+            webhook.dump();
+
+            if github::should_deploy_github(
+                webhook.action(),
+                webhook.is_merged(),
+                webhook.target_branch(),
+            ) {
+                debug!(log, "handle deployment"; "project" => project_name);
+                match webhook.clone_repository() {
+                    Ok(repo_path) => debug!(log, "cloned repository"; "path" => repo_path),
+                    Err(e) => error!(log, "failed to clone"; "error" => e),
+                }
+                let project_clone = project.clone();
+                task::spawn(async move { data.execute_commands(project_clone).await });
+                Ok(HttpResponse::Ok().into())
+            } else {
+                Ok(HttpResponse::InternalServerError().into())
+            }
+        }
     }
 }
 

@@ -9,7 +9,7 @@ documentation = "https://github.com/geoffjay/shook"
 homepage = "https://github.com/geoffjay/shook"
 repository = "https://github.com/geoffjay/shook"
 readme = "README.md"
-keywords = ["gitlab", "webhook"]
+keywords = ["gitlab", "github", "webhook", "deployment", "automation"]
 categories = ["command-line-utilities", "web-programming::http-client"]
 
 [dependencies]
@@ -20,9 +20,12 @@ chrono = "0.4.0"
 clap = "2.33.3"
 futures = "0.3.17"
 git2 = "0.13.23"
-serde = "1.0.130"
+hex = "0.4.3"
+hmac = "0.12.1"
+serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.68"
 serde_yaml = "0.8.21"
+sha2 = "0.10.6"
 slog = "2.7.0"
 slog-async = "2.7.0"
 slog-json = "2.4.0"

@@ -3,10 +3,25 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::str;
 
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    GitLab,
+    GitHub,
+}
+
+impl Default for Provider {
+    fn default() -> Self {
+        Provider::GitLab
+    }
+}
+
 #[derive(Clone, Deserialize)]
 pub struct Project {
     pub name: String,
     pub token: String,
+    #[serde(default)]
+    pub provider: Provider,
     env: Option<HashMap<String, String>>,
     commands: Vec<String>,
 }
@@ -107,10 +122,32 @@ mod tests {
 
         assert_eq!(project.name, "sample".to_string());
         assert_eq!(project.token, "really-gud-secret".to_string());
+        assert_eq!(project.provider, Provider::GitLab); // default provider
         assert_eq!(env.len(), 1);
         assert_eq!(
             env.get(&"LOG".to_string()),
             Some(&"/tmp/sample.log".to_string())
         );
+    }
+
+    #[test]
+    fn it_deserializes_with_github_provider() {
+        let input = r#"
+          projects:
+            - name: github-project
+              token: github-secret-token
+              provider: github
+              env:
+                LOG: /tmp/github.log
+              commands:
+                - touch $LOG
+                - echo github >> $LOG
+        "#;
+        let config = serde_yaml::from_str::<Config>(input).unwrap();
+        let project = &config.projects[0];
+
+        assert_eq!(project.name, "github-project".to_string());
+        assert_eq!(project.token, "github-secret-token".to_string());
+        assert_eq!(project.provider, Provider::GitHub);
     }
 }
