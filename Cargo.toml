@@ -1,6 +1,6 @@
 [package]
 name = "shook"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Geoff Johnson <geoff.jay@gmail.com>"]
 description = "Service to listen to Webhook events and execute a set of commands"
 edition = "2018"
