@@ -21,6 +21,8 @@ Lightweight webhook server to listen to GitLab and GitHub webhooks and execute c
 
 ## Install
 
+### Linux
+
 ```shell
 curl -s https://api.github.com/repos/geoffjay/shook/releases/latest \
     | jq '.assets[] | select(.name|test("^shook.*linux-musl.zip$")) | .browser_download_url' \
@@ -30,7 +32,21 @@ unzip $(find . -iname "shook_*.zip")
 sudo mv shook /usr/local/bin/
 ```
 
-Check the [setup](doc/SETUP.md) documentation for any remaining steps.
+Check the [setup documentation](doc/SETUP.md) for systemd configuration.
+
+### macOS (Apple Silicon)
+
+```shell
+curl -s https://api.github.com/repos/geoffjay/shook/releases/latest \
+    | jq '.assets[] | select(.name|test("^shook.*aarch64-apple-darwin.zip$")) | .browser_download_url' \
+    | tr -d \" \
+    | wget -qi -
+unzip $(find . -iname "shook_*_aarch64-apple-darwin.zip")
+sudo mv shook /usr/local/bin/
+sudo chmod +x /usr/local/bin/shook
+```
+
+Check the [macOS setup documentation](doc/MACOS_SETUP.md) for launchd configuration.
 
 ## Configuration
 

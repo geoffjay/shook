@@ -1,0 +1,13 @@
+[Unit]
+Description=Shook Webhook Service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+ExecStart=/usr/local/bin/shook --host 127.0.0.1 --config /etc/shook/config.yml
+
+[Install]
+WantedBy=multi-user.target

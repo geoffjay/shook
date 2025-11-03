@@ -96,23 +96,28 @@ EOF
 
 ## Run `shook` with `systemd`
 
+A reference systemd service file is provided in `service-files/shook.service`. To install:
+
 ```shell
-cat <<EOF | sudo tee /etc/systemd/system/shook.service
-[Unit]
-Description=Shook Webhook Service
-After=network.target
-StartLimitIntervalSec=0
-
-[Service]
-Type=simple
-Restart=always
-RestartSec=1
-ExecStart=/usr/local/bin/shook -h 127.0.0.1 -c /etc/shook/config.yml
-
-[Install]
-WantedBy=multi-user.target
-EOF
+sudo cp service-files/shook.service /etc/systemd/system/
 sudo chmod 644 /etc/systemd/system/shook.service
+sudo systemctl daemon-reload
 sudo systemctl enable shook.service
 sudo systemctl start shook.service
 ```
+
+Check the service status:
+
+```shell
+sudo systemctl status shook.service
+```
+
+View logs:
+
+```shell
+sudo journalctl -u shook.service -f
+```
+
+## macOS Setup
+
+For macOS installation and launchd setup, see [MACOS_SETUP.md](MACOS_SETUP.md).
